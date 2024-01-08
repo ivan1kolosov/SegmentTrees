@@ -1,0 +1,49 @@
+struct SegmentTree_BottomUp_pref {
+    struct Node {
+        ll sum = 0, add = 0;
+    };
+    vector<Node> tree;
+    int sz;
+
+    SegmentTree_BottomUp_pref(int sz) {
+        this->sz = sz;
+        sz = 1 << (int)ceil(log2(sz)) + 1;
+        tree.resize(sz);
+    }
+
+    void add(int l, int r, ll val) {
+        if (l != 0) add(tree.size() / 2 + l - 1, 1, 1, -val);
+        add(tree.size() / 2 + r, 1, 1, val);
+    }
+
+    void add(int u, int isz, int sz, ll val) {
+        while (u != 0) {
+            tree[u].sum += isz * val;
+            if (u & 1) {
+                tree[u - 1].add += val;
+                tree[u - 1].sum += sz * val;
+                isz += sz;
+            }
+            sz <<= 1;
+            u >>= 1;
+        }
+    }
+
+    ll get(int l, int r) {
+        return get(tree.size() / 2 + r, 1, 1) - ((l == 0) ? 0 : get(tree.size() / 2 + l - 1, 1, 1));
+    }
+
+    ll get(int u, int isz, int sz) {
+        ll res = tree[u].sum;
+        while (u != 1) {
+            if (u & 1) {
+                res += tree[u - 1].sum;
+                isz += sz;
+            }
+            sz <<= 1;
+            u >>= 1;
+            res += isz * tree[u].add;
+        }
+        return res;
+    }
+};
