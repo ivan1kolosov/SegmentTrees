@@ -1,0 +1,52 @@
+struct SegmentTree {
+    struct Node {
+        ll sum = 0, add = 0;
+    };
+    vector<Node> tree;
+
+    SegmentTree(int sz) {
+        sz = 1 << (int)ceil(log2(sz)) + 1;
+        tree.resize(sz);
+    }
+
+    void _add(int l, int r, ll val) {
+        add(1, l, r, val, 0, tree.size() / 2 - 1);
+    }
+
+    void upd(int u, int l, int r) {
+        tree[u].add += tree[u / 2].add;
+        tree[u].sum += tree[u / 2].add * (r - l + 1) / 2;
+    }
+
+    void add(int u, int ql, int qr, ll val, int l, int r) {
+        if (ql > r || qr < l) return;
+        if (l >= ql && r <= qr) {
+            tree[u].sum += val * (r - l + 1);
+            tree[u].add += val;
+            return;
+        }
+        if (tree[u].add != 0) {
+            upd(u * 2, l, r);
+            upd(u * 2 + 1, l, r);
+            tree[u].add = 0;
+        }
+        add(u * 2, ql, qr, val, l, (l + r) / 2);
+        add(u * 2 + 1, ql, qr, val, (l + r) / 2 + 1, r);
+        tree[u].sum = tree[u * 2].sum + tree[u * 2 + 1].sum;
+    }
+
+    ll get(int l, int r) {
+        return get(1, l, r, 0, tree.size() / 2 - 1);
+    }
+
+    ll get(int u, int ql, int qr, int l, int r) {
+        if (ql > r || qr < l) return 0;
+        if (l >= ql && r <= qr) return tree[u].sum;
+        if (tree[u].add != 0) {
+            upd(u * 2, l, r);
+            upd(u * 2 + 1, l, r);
+            tree[u].add = 0;
+        }
+        return get(u * 2, ql, qr, l, (l + r) / 2) + get(u * 2 + 1, ql, qr, (l + r) / 2 + 1, r);
+    }
+};
