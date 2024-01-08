@@ -1,0 +1,63 @@
+struct SegmentTree_BottomUp {
+    struct Node {
+        ll sum = 0, add = 0;
+    };
+    vector<Node> tree;
+    const int MASK = ~1;
+
+    SegmentTree_BottomUp(int sz) {
+        sz = 1 << (int)ceil(log2(sz)) + 1;
+        tree.resize(sz);
+    }
+
+    void add(int l, int r, ll val) {
+        l += tree.size() >> 1;
+        r += tree.size() >> 1;
+        int risz = 1, lisz = (l != r), h = 0, tmp;
+        while ((r >> 1) != (l >> 1)) {
+            tree[r].sum += risz * val;
+            tmp = -(r & 1) & val;
+            tree[r - 1].add += tmp;
+            tree[r - 1].sum += tmp << h;
+
+            tree[l].sum += lisz * val;
+            tmp = -(1 ^ (l & 1)) & val;
+            tree[l + 1].add += tmp;
+            tree[l + 1].sum += tmp << h;
+
+            risz += (r & 1) << h;
+            lisz += (1 ^ (l & 1)) << h;
+            h++;
+            r >>= 1;
+            l >>= 1;
+        }
+        tree[r].sum += risz * val;
+        tree[l].sum += lisz * val;
+        ll x = (risz + lisz) * val;
+        while ((l = l >> 1) != 0) {
+            tree[l].sum += x;
+        }
+    }
+
+    ll get(int l, int r) {
+        l += tree.size() >> 1;
+        r += tree.size() >> 1;
+        ll res = tree[l].sum + (l != r) * tree[r].sum;
+        int risz = 1, lisz = (l != r), h = 0;
+        while ((r >> 1) != (l >> 1)) {
+            res += -(r & 1) & tree[r - 1].sum;
+            res += -(1 ^ (l & 1)) & tree[l + 1].sum;
+            risz += (r & 1) << h;
+            lisz += (1 ^ (l & 1)) << h;
+            h++;
+            r >>= 1;
+            l >>= 1;
+            res += tree[r].add * risz + tree[l].add * lisz;
+        }
+        int x = risz + lisz;
+        while ((l = l >> 1) != 0) {
+            res += tree[l].add * x;
+        }
+        return res;
+    }
+};
