@@ -1,0 +1,164 @@
+ll sum_pi64(__m256i x, int l, int r) {
+    ll res = 0;
+    for (int i = l; i <= r; i++) {
+        res += ((ll*)&x)[i];
+    }
+    return res;
+}
+
+using reg = __m256i;
+reg pref_mask[4]{}, suf_mask[4]{};
+
+constexpr void calc_masks() {
+    for (int k = 0; k < 4; k++) {
+        for (int i = 0; i < k; i++) {
+            ((ull*)&pref_mask[k])[i] = ull(-1);
+        }
+
+        for (int i = k + 1; i < 4; i++) {
+            ((ull*)&suf_mask[k])[i] = ull(-1);
+        }
+    }
+}
+
+template <int b = 5>
+struct WSegmentTree {
+    const int B = 1 << b, offset_mask = B - 1;
+    struct alignas(64) Node {
+        reg sum[1 << b - 2]{}, add[1 << b - 2]{};
+    };
+    Node* tree;
+    vector<int> offset;
+
+    WSegmentTree(int sz) {
+        int tsz = 0;
+        offset.reserve(20);
+        while (sz != 1) {
+            offset.push_back(tsz);
+            sz = (sz + B - 1) >> b; //количество блоков на текущем слое
+            tsz += sz;
+        }
+        tree = new Node[tsz];
+    }
+
+    inline int up(int num, int h) { //индекс предка вершины num
+        return offset[h + 1] + ((num - offset[h]) >> b);
+    }
+
+    void add(int l, int r, ll val) {
+        reg add_r = _mm256_set1_epi64x(val), adds_r = _mm256_set1_epi64x(val);
+        int block_size = b, h = 0;
+        int cur_l = l >> b, cur_r = r >> b,
+            offset_l = l & offset_mask, offset_r = r & offset_mask,
+            lisz = 1, risz = ((l == r) ? 0 : 1);
+        ((ll*)&tree[cur_l].add)[offset_l] += val;
+        ((ll*)&tree[cur_r].add)[offset_r] += val * risz;
+        while (cur_l != cur_r) {
+            int up_l = up(cur_l, h), up_r = up(cur_r, h);
+            ((ll*)&tree[cur_l].sum)[offset_l] += lisz * val;
+            tree[cur_l].add[offset_l >> 2] = _mm256_add_epi64(tree[cur_l].add[offset_l >> 2], _mm256_and_si256(suf_mask[offset_l & 3], add_r));
+            tree[cur_l].sum[offset_l >> 2] = _mm256_add_epi64(tree[cur_l].sum[offset_l >> 2], _mm256_and_si256(suf_mask[offset_l & 3], adds_r));
+            for (int i = (offset_l >> 2) + 1; i < (B >> 2); i++) {
+                tree[cur_l].add[i] = _mm256_add_epi64(tree[cur_l].add[i], add_r);
+                tree[cur_l].sum[i] = _mm256_add_epi64(tree[cur_l].sum[i], adds_r);
+            }
+
+            ((ll*)&tree[cur_r].sum)[offset_r] += risz * val;
+            tree[cur_r].add[offset_r >> 2] = _mm256_add_epi64(tree[cur_r].add[offset_r >> 2], _mm256_and_si256(pref_mask[offset_r & 3], add_r));
+            tree[cur_r].sum[offset_r >> 2] = _mm256_add_epi64(tree[cur_r].sum[offset_r >> 2], _mm256_and_si256(pref_mask[offset_r & 3], adds_r));
+            for (int i = 0; i < (offset_r >> 2); i++) {
+                tree[cur_r].add[i] = _mm256_add_epi64(tree[cur_r].add[i], add_r);
+                tree[cur_r].sum[i] = _mm256_add_epi64(tree[cur_r].sum[i], adds_r);
+            }
+
+            lisz += B - 1 - offset_l << block_size - b;
+            risz += offset_r << block_size - b;
+            offset_l = cur_l - offset[h] & offset_mask; offset_r = cur_r - offset[h] & offset_mask;
+            cur_l = up_l; cur_r = up_r;
+            block_size += b;
+            adds_r = _mm256_slli_epi64(adds_r, b);
+            h++;
+        }
+        if ((offset_l >> 2) == (offset_r >> 2)) {
+            for (int i = (offset_l & 3) + 1; i < (offset_r & 3); i++) {
+                ((ll*)&tree[cur_l].sum[offset_l >> 2])[i] += ((ll*)&adds_r)[0];
+                ((ll*)&tree[cur_l].add[offset_l >> 2])[i] += val;
+            }
+        } else {
+            tree[cur_l].add[offset_l >> 2] = _mm256_add_epi64(tree[cur_l].add[offset_l >> 2], _mm256_and_si256(suf_mask[offset_l & 3], add_r));
+            tree[cur_l].sum[offset_l >> 2] = _mm256_add_epi64(tree[cur_l].sum[offset_l >> 2], _mm256_and_si256(suf_mask[offset_l & 3], adds_r));
+            tree[cur_r].add[offset_r >> 2] = _mm256_add_epi64(tree[cur_r].add[offset_r >> 2], _mm256_and_si256(pref_mask[offset_r & 3], add_r));
+            tree[cur_r].sum[offset_r >> 2] = _mm256_add_epi64(tree[cur_r].sum[offset_r >> 2], _mm256_and_si256(pref_mask[offset_r & 3], adds_r));
+
+            for (int i = (offset_l >> 2) + 1; i < (offset_r >> 2); i++) {
+                tree[cur_l].add[i] = _mm256_add_epi64(tree[cur_l].add[i], add_r);
+                tree[cur_l].sum[i] = _mm256_add_epi64(tree[cur_l].sum[i], adds_r);
+            }
+        }
+        ((ll*)&tree[cur_l].sum)[offset_l] += lisz * val;
+        ((ll*)&tree[cur_r].sum)[offset_r] += risz * val;
+
+        while (++h != offset.size()) {
+            offset_l = cur_l - offset[h - 1] & offset_mask;
+            cur_l = up(cur_l, h - 1);
+            ((ll*)&tree[cur_l].sum)[offset_l] += val * (r - l + 1);
+        }
+    }
+
+    ll get(int l, int r) {
+        int block_size = b, h = 0;
+        int cur_l = l >> b, cur_r = r >> b,
+            offset_l = l & offset_mask, offset_r = r & offset_mask,
+            lisz = 1, risz = ((l == r) ? 0 : 1);
+
+        reg rres{}; ll res = 0;
+
+        while (cur_l != cur_r) {
+            int up_l = up(cur_l, h), up_r = up(cur_r, h);
+            res += ((ll*)&tree[cur_l].add)[offset_l] * lisz;
+            rres = _mm256_add_epi64(rres, _mm256_and_si256(tree[cur_l].sum[offset_l >> 2], suf_mask[offset_l & 3]));
+            for (int i = (offset_l >> 2) + 1; i < (B >> 2); i++) {
+                rres = _mm256_add_epi64(rres, tree[cur_l].sum[i]);
+            }
+
+            res += ((ll*)&tree[cur_r].add)[offset_r] * risz;
+            rres = _mm256_add_epi64(rres, _mm256_and_si256(tree[cur_r].sum[offset_r >> 2], pref_mask[offset_r & 3]));
+            for (int i = 0; i < (offset_r >> 2); i++) {
+                rres = _mm256_add_epi64(rres, tree[cur_r].sum[i]);
+            }
+
+            lisz += B - 1 - offset_l << block_size - b;
+            risz += offset_r << block_size - b;
+            offset_l = cur_l - offset[h] & offset_mask; offset_r = cur_r - offset[h] & offset_mask;
+            cur_l = up_l; cur_r = up_r;
+            block_size += b;
+            h++;
+        }
+
+        if ((offset_l >> 2) == (offset_r >> 2)) {
+            for (int i = offset_l + 1; i < offset_r; i++) {
+                res += ((ll*)tree[cur_l].sum)[i];
+            }
+        } else {
+            rres = _mm256_add_epi64(rres, _mm256_and_si256(suf_mask[offset_l & 3], tree[cur_l].sum[offset_l >> 2]));
+            rres = _mm256_add_epi64(rres, _mm256_and_si256(pref_mask[offset_r & 3], tree[cur_r].sum[offset_r >> 2]));
+
+            for (int i = (offset_l >> 2) + 1; i < (offset_r >> 2); i++) {
+                rres = _mm256_add_epi64(rres, tree[cur_l].sum[i]);
+            }
+        }
+        res += ((ll*)&tree[cur_l].add)[offset_l] * lisz;
+        res += ((ll*)&tree[cur_l].add)[offset_r] * risz;
+        while (++h != offset.size()) {
+            offset_l = cur_l - offset[h - 1] & offset_mask;
+            cur_l = up(cur_l, h - 1);
+            res += ((ll*)&tree[cur_l].add)[offset_l] * (r - l + 1);
+        }
+
+        return res + sum_pi64(rres, 0, 3);
+    }
+
+    ~WSegmentTree() {
+        delete[] tree;
+    }
+};
